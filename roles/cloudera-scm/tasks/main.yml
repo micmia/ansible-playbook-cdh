@@ -1,0 +1,134 @@
+---
+- name: Download the cloudera-manager.repo file
+  get_url:
+    url: "{{ cloudera_scm_repo_file_url }}"
+    dest: /etc/yum.repos.d/
+
+- name: Import the repository signing GPG key
+  rpm_key:
+    state: present
+    key: https://archive.cloudera.com/cm6/6.0.0/redhat7/yum/RPM-GPG-KEY-cloudera
+
+# https://www.cloudera.com/documentation/enterprise/6/6.0/topics/cdh_ig_jdk_installation.html
+- name: Install the Oracle JDK
+  yum:
+    name: oracle-j2sdk1.8
+    state: present
+    update_cache: yes
+
+# https://www.cloudera.com/documentation/enterprise/6/6.0/topics/install_cm_server.html
+- name: Install the Cloudera Manager packages
+  yum:
+    name: "{{ item }}"
+    state: present
+    update_cache: yes
+  with_items:
+  - cloudera-manager-daemons
+  - cloudera-manager-agent
+  - cloudera-manager-server
+
+# Skip Auto-TLS setup
+- name: Enable Auto-TLS
+  shell: JAVA_HOME=/usr/java/jdk1.8.0_141-cloudera /opt/cloudera/cm-agent/bin/certmanager setup --configure-services
+  ignore_errors: yes
+  run_once: true
+  when: False
+
+- name: Configure Cloudera Manager Agent
+  lineinfile:
+    dest: /etc/cloudera-scm-agent/config.ini
+    regexp: "^server_host"
+    line: "server_host={{ ansible_hostname }}"
+    state: present
+  notify: restart cloudera scm agent
+
+# https://www.cloudera.com/documentation/enterprise/6/6.0/topics/install_cm_mariadb.html
+# You may also need to run manually /usr/bin/mysql_secure_installation to set other security-related settings.
+- name: Install the MariaDB server
+  yum:
+    name: mariadb-server
+    state: present
+    update_cache: yes
+
+- name: Stop the MariaDB server if it is running
+  service:
+    name: mariadb
+    state: stopped
+
+- name: Configure the MariaDB server
+  template:
+    src: my.cnf.j2
+    dest: /etc/my.cnf
+    backup: yes
+
+- name: Ensure the MariaDB server is running and starts on boot
+  service:
+    name: mariadb
+    state: started
+    enabled: true
+
+- name: Set root password
+  mysql_user:
+    name: root
+    password: "{{ cloudera_scm_mysql_root_password }}"
+    priv: '*.*:ALL,GRANT'
+    host_all: yes
+    state: present
+
+# https://docs.ansible.com/ansible/latest/modules/mysql_user_module.html
+- name: Save the root credentials into ~/.my.cnf
+  copy:
+    dest: ~/.my.cnf
+    content: |
+      [client]
+      user=root
+      password={{ cloudera_scm_mysql_root_password }}
+
+- name: Download the MySQL JDBC driver
+  unarchive:
+    src: https://dev.mysql.com/get/Downloads/Connector-J/mysql-connector-java-5.1.46.tar.gz
+    dest: /tmp/
+    remote_src: yes
+
+- name: Create the /usr/share/java directory if it doesn't exist
+  file:
+    path: /usr/share/java
+    state: directory
+    mode: 0755
+
+- name: Copy the JDBC driver to the /usr/share/java directory
+  shell: |
+    cp /tmp/mysql-connector-java-5.1.46/mysql-connector-java-5.1.46-bin.jar /usr/share/java/mysql-connector-java.jar
+
+- name: Create databases and service accounts for components that require databases (1/2)
+  template:
+    src: install.sql.j2
+    dest: /tmp/install.sql
+
+- name: Create databases and service accounts for components that require databases (2/2)
+  mysql_db:
+    state: import
+    name: all
+    target: /tmp/install.sql
+
+# https://www.cloudera.com/documentation/enterprise/6/6.0/topics/prepare_cm_database.html
+- name: Prepare the Cloudera Manager Server database
+  shell: |
+    /opt/cloudera/cm/schema/scm_prepare_database.sh \
+    mysql {{ cloudera_scm_mysql_db[0].name }} {{ cloudera_scm_mysql_db[0].user }} {{ cloudera_scm_mysql_db[0].password }}
+
+# https://www.cloudera.com/documentation/enterprise/6/6.0/topics/install_software_cm_wizard.html
+- name: Start or restart the Cloudera Manager Server
+  service:
+    name: cloudera-scm-server
+    state: restarted
+    enabled: true
+
+- debug:
+    msg:
+    - "Wait several minutes for the Cloudera Manager Server to start."
+    - "To observe the startup process, run the following on the Cloudera Manager Server host:"
+    - "ssh -t root@{{inventory_hostname}} 'tail -f /var/log/cloudera-scm-server/cloudera-scm-server.log'"
+    - "When you see this log entry, the Cloudera Manager Admin Console is ready:"
+    - "INFO WebServerImpl:com.cloudera.server.cmf.WebServerImpl: Started Jetty server."
+    - "In a web browser, go to http://{{ inventory_hostname }}:7180."

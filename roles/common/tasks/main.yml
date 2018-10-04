@@ -1,0 +1,49 @@
+---
+- name: Configure hostname
+  hostname:
+    name: "{{ ansible_hostname }}"
+
+- name: Configure /etc/hosts
+  template:
+    src: hosts.j2
+    dest: /etc/hosts
+    backup: yes
+
+- name: Ensure ntp package is installed
+  package:
+    name: ntp
+    state: present
+  tags: ntp
+
+- name: Set ntp timezone
+  timezone:
+    name: "{{ ntp_timezone }}"
+  tags: ntp
+
+- name: Ensure ntp service is running
+  service:
+    name: ntpd
+    state: started
+    enabled: yes
+  tags: ntp
+
+- name: Ensure wget package is installed
+  package:
+    name: wget
+    state: present
+
+- name: Disallow SSH password authentication
+  lineinfile:
+    dest: /etc/ssh/sshd_config
+    regexp: "^PasswordAuthentication"
+    line: "PasswordAuthentication no"
+    state: present
+  notify: restart sshd
+
+- name: Set the SELinux mode
+  lineinfile:
+    dest: /etc/selinux/config
+    regexp: "^SELINUX="
+    line: "SELINUX=permissive"
+    state: present
+  notify: disable SELinux

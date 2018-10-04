@@ -1,0 +1,19 @@
+ntp_timezone: Europe/Paris
+
+hosts:
+- {hostname: "scm", fqdn: "scm.cloudera.example.com", ip_address: "192.168.0.1"}
+- {hostname: "cdh1", fqdn: "cdh1.cloudera.example.com", ip_address: "192.168.0.2"}
+- {hostname: "cdh2", fqdn: "cdh1.cloudera.example.com", ip_address: "192.168.0.3"}
+- {hostname: "cdh3", fqdn: "cdh1.cloudera.example.com", ip_address: "192.168.0.4"}
+
+cloudera_scm_mysql_root_password: ''
+cloudera_scm_mysql_db:
+- {name: scm, user: scm, password: ''}
+- {name: amon, user: amon, password: ''}
+- {name: rman, user: rman, password: ''}
+- {name: hue, user: hue, password: ''}
+- {name: metastore, user: hive, password: ''}
+- {name: sentry, user: sentry, password: ''}
+- {name: nav, user: nav, password: ''}
+- {name: navms, user: navms, password: ''}
+- {name: oozie, user: oozie, password: ''}

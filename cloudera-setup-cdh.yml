@@ -1,0 +1,53 @@
+---
+- name: "Setup CDH"
+  hosts: cloudera
+  become: yes
+  remote_user: root
+  gather_facts: True
+
+  vars:
+    cloudera_scm_mysql_db:
+    - {name: hue, user: hue, password: ''}
+    - {name: metastore, user: hive, password: ''}
+    - {name: oozie, user: oozie, password: ''}
+
+  pre_tasks:
+  - name: Generate SSH keys
+    shell: ssh-keygen -b 2048 -t rsa -f /root/.ssh/id_rsa -q -N ""
+    args:
+      creates: /root/.ssh/id_rsa
+    when: "inventory_hostname == groups['scm'][0]"
+
+  # If this does not work, run "ssh-add -K ~/.ssh/id_rsa" on macOS
+  - name: Copy the public key to CDH nodes
+    shell: "ssh-copy-id -i ~/.ssh/id_rsa.pub root@{{ item }} -o StrictHostKeyChecking=no"
+    with_items: "{{ groups.cdh }}"
+    when: "inventory_hostname == groups['scm'][0]"
+
+  roles:
+  - {role: common, tags: [common], when: "'cdh' in group_names"}
+  - {role: cloudera-cdh, tags: [cloudera,cdh], when: "inventory_hostname == groups['cdh'][0]"}
+
+- name: "Reconfigure CDH"
+  hosts: cdh
+  become: yes
+  remote_user: root
+  gather_facts: True
+
+  tasks:
+  - shell: |
+      sysctl vm.swappiness=10
+      echo never > /sys/kernel/mm/transparent_hugepage/defrag
+      echo never > /sys/kernel/mm/transparent_hugepage/enabled
+
+  - lineinfile:
+      path: /etc/sysctl.conf
+      line: "vm.swappiness = 10"
+
+  - lineinfile:
+      path: /etc/rc.local
+      line: "echo never > /sys/kernel/mm/transparent_hugepage/defrag"
+
+  - lineinfile:
+      path: /etc/rc.local
+      line: "echo never > /sys/kernel/mm/transparent_hugepage/enabled"

@@ -1,0 +1,10 @@
+---
+- name: "Setup Cloudera Manager Server (SCM Server)"
+  hosts: scm
+  become: yes
+  remote_user: root
+  gather_facts: True
+
+  roles:
+  - {role: common, tags: [common]}
+  - {role: cloudera-scm, tags: [cloudera,scm]}

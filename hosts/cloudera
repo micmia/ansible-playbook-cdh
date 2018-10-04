@@ -1,0 +1,11 @@
+[scm]
+scm.cloudera.example.com
+
+[cdh]
+cdh1.cloudera.example.com
+cdh2.cloudera.example.com
+cdh3.cloudera.example.com
+
+[cloudera:children]
+scm
+cdh

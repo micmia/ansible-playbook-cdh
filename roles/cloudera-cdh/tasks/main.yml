@@ -1,0 +1,85 @@
+---
+- name: Install pip
+  shell: easy_install pip
+
+- name: Install dependencies for the MySQL-python module
+  yum:
+    name: "{{item}}"
+    state: present
+  with_items:
+  - mysql-devel
+  - python-devel
+  - python-setuptools
+  - gcc
+
+- name: Install the MySQL-python module
+  pip: name=MySQL-python
+
+# https://www.cloudera.com/documentation/enterprise/6/6.0/topics/install_cm_mariadb.html
+# You may also need to run manually /usr/bin/mysql_secure_installation to set other security-related settings.
+- name: Install the MariaDB server
+  yum:
+    name: mariadb-server
+    state: present
+    update_cache: yes
+
+- name: Stop the MariaDB server if it is running
+  service:
+    name: mariadb
+    state: stopped
+
+- name: Configure the MariaDB server
+  template:
+    src: my.cnf.j2
+    dest: /etc/my.cnf
+    backup: yes
+
+- name: Ensure the MariaDB server is running and starts on boot
+  service:
+    name: mariadb
+    state: started
+    enabled: true
+
+- name: Set root password
+  mysql_user:
+    name: root
+    password: "{{ cloudera_scm_mysql_root_password }}"
+    priv: '*.*:ALL,GRANT'
+    host_all: yes
+    state: present
+
+# https://docs.ansible.com/ansible/latest/modules/mysql_user_module.html
+- name: Save the root credentials into ~/.my.cnf
+  copy:
+    dest: ~/.my.cnf
+    content: |
+      [client]
+      user=root
+      password={{ cloudera_scm_mysql_root_password }}
+
+- name: Download the MySQL JDBC driver
+  unarchive:
+    src: https://dev.mysql.com/get/Downloads/Connector-J/mysql-connector-java-5.1.46.tar.gz
+    dest: /tmp/
+    remote_src: yes
+
+- name: Create the /usr/share/java directory if it doesn't exist
+  file:
+    path: /usr/share/java
+    state: directory
+    mode: 0755
+
+- name: Copy the JDBC driver to the /usr/share/java directory
+  shell: |
+    cp /tmp/mysql-connector-java-5.1.46/mysql-connector-java-5.1.46-bin.jar /usr/share/java/mysql-connector-java.jar
+
+- name: Create databases and service accounts for components that require databases (1/2)
+  template:
+    src: install.sql.j2
+    dest: /tmp/install.sql
+
+- name: Create databases and service accounts for components that require databases (2/2)
+  mysql_db:
+    state: import
+    name: all
+    target: /tmp/install.sql
